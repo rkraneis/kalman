@@ -25,6 +25,7 @@ import org.apache.commons.math3.filter.ProcessModel;
 import org.apache.commons.math3.linear.Array2DRowRealMatrix;
 import org.apache.commons.math3.linear.ArrayRealVector;
 import org.apache.commons.math3.linear.MatrixDimensionMismatchException;
+import org.apache.commons.math3.linear.MatrixUtils;
 import org.apache.commons.math3.linear.RealMatrix;
 import org.apache.commons.math3.linear.RealVector;
 import org.apache.commons.math3.linear.SingularMatrixException;
@@ -40,10 +41,11 @@ public class MainApp extends Application {
 
         List<XYChart.Data<Double, Double>> s0 = new ArrayList<>();
         List<XYChart.Data<Double, Double>> s1 = new ArrayList<>();
+        List<XYChart.Data<Double, Double>> s2 = new ArrayList<>();
 
-        kalman2(s0, s1);
+        kalman2(s0, s1, s2);
 
-        LineChart chart = createChart(s0, s1);
+        LineChart chart = createChart(s0, s1, s2);
         root.getChildren().add(chart);
         primaryStage.show();
     }
@@ -62,46 +64,46 @@ public class MainApp extends Application {
         // state transition matrix
         // A = [ 1  dt ]
         //     [ 0  1  ]
-        RealMatrix A = new Array2DRowRealMatrix(new double[][]{
-            {1, dt},
-            {0, 1}
-        });
+        RealMatrix A = matrix(
+                $(1, dt),
+                $(0, 1)
+        );
 
         // control input matrix
         // B = [ dt^2/2 ]
         //     [ dt     ]
-        RealMatrix B = new Array2DRowRealMatrix(new double[][]{
-            {Math.pow(dt, 2d) / 2d},
-            {dt}
-        });
+        RealMatrix B = matrix(
+                $(Math.pow(dt, 2d) / 2d),
+                $(dt)
+        );
 
         // measurement matrix
         // H = [ 1 0 ]
-        RealMatrix H = new Array2DRowRealMatrix(new double[][]{
-            {1d, 0d}
-        });
+        RealMatrix H = matrix(
+                $(1d, 0d)
+        );
 
         // x = [ 0 0 ]
-        RealVector x = new ArrayRealVector(new double[]{
-            0, 0
-        });
+        RealVector x = vector(
+                0, 0
+        );
 
         // process noise covariance matrix
         // Q = [ dt^4/4 dt^3/2 ]
         //     [ dt^3/2 dt^2   ]
-        RealMatrix tmp = new Array2DRowRealMatrix(new double[][]{
-            {Math.pow(dt, 4d) / 4d, Math.pow(dt, 3d) / 2d},
-            {Math.pow(dt, 3d) / 2d, Math.pow(dt, 2d)}
-        });
+        RealMatrix tmp = matrix(
+                $(Math.pow(dt, 4d) / 4d, Math.pow(dt, 3d) / 2d),
+                $(Math.pow(dt, 3d) / 2d, Math.pow(dt, 2d))
+        );
         RealMatrix Q = tmp.scalarMultiply(Math.pow(accelNoise, 2));
 
         // error covariance matrix
         // P0 = [ 1 1 ]
         //      [ 1 1 ]
-        RealMatrix P0 = new Array2DRowRealMatrix(new double[][]{
-            {1, 1},
-            {1, 1}
-        });
+        RealMatrix P0 = matrix(
+                $(1, 1),
+                $(1, 1)
+        );
 
         // measurement noise covariance matrix
         // R = [ measurementNoise^2 ]
@@ -110,7 +112,7 @@ public class MainApp extends Application {
         });
 
         // constant control input, increase velocity by 0.1 m/s per cycle
-        RealVector u = new ArrayRealVector(new double[]{0.1d});
+        RealVector u = vector(0.1d);
 
         ProcessModel pm = new DefaultProcessModel(A, B, Q, x, P0);
         MeasurementModel mm = new DefaultMeasurementModel(H, R);
@@ -118,22 +120,21 @@ public class MainApp extends Application {
 
         RandomGenerator rand = new JDKRandomGenerator();
 
-        RealVector tmpPNoise = new ArrayRealVector(new double[]{
-            Math.pow(dt, 2d) / 2d,
-            dt
-        });
+        RealVector tmpPNoise = vector(
+                Math.pow(dt, 2d) / 2d,
+                dt
+        );
         RealVector mNoise = new ArrayRealVector(1);
 
         double position = filter.getStateEstimation()[0];
         double velocity = filter.getStateEstimation()[1];
         l0.add(new XYChart.Data<>(position, velocity));
-        double a = 0.1;
-        double v = 0;
-        double s = 0;
-        l1.add(new XYChart.Data<>(s, v));
+        double realPosition = x.getEntry(0);
+        double realVelocity = x.getEntry(1);
+        l1.add(new XYChart.Data<>(realPosition, realVelocity));
 
         // iterate 60 steps
-        for (int i = 0; i < 600; i++) {
+        for (int i = 0; i < 60; i++) {
             filter.predict(u);
 
             // simulate the process
@@ -141,6 +142,10 @@ public class MainApp extends Application {
 
             // x = A * x + B * u + pNoise
             x = A.operate(x).add(B.operate(u)).add(pNoise);
+
+            realPosition = x.getEntry(0);
+            realVelocity = x.getEntry(1);
+            l1.add(new XYChart.Data<>(realPosition, realVelocity));
 
             // simulate the measurement
             mNoise.setEntry(0, measurementNoise * rand.nextGaussian());
@@ -153,14 +158,10 @@ public class MainApp extends Application {
             position = filter.getStateEstimation()[0];
             velocity = filter.getStateEstimation()[1];
             l0.add(new XYChart.Data<>(position, velocity));
-
-            v = a * i * dt;
-            s = .5 * a * i * i * dt * dt;
-            l1.add(new XYChart.Data<>(s, v));
         }
     }
 
-    private void kalman2(List<XYChart.Data<Double, Double>> l0, List<XYChart.Data<Double, Double>> l1) throws MatrixDimensionMismatchException, NoDataException, DimensionMismatchException, NullArgumentException, SingularMatrixException, OutOfRangeException {
+    private void kalman2(List<XYChart.Data<Double, Double>> l0, List<XYChart.Data<Double, Double>> l1, List<XYChart.Data<Double, Double>> l2) throws MatrixDimensionMismatchException, NoDataException, DimensionMismatchException, NullArgumentException, SingularMatrixException, OutOfRangeException {
         // cannonball
         // x(t)   = x_0 + v_0x*t
         // v_x(t) = v_0x
@@ -168,137 +169,81 @@ public class MainApp extends Application {
         // v_y(t) = v_0y - g*t
 
         // discrete time interval
-        double dt = 0.1d;
+        double dt = 0.1;
+
         // position measurement noise (meter)
-        double measurementNoise = 10d;
-        // acceleration noise (meter/sec^2)
-        double accelNoise = 0.2d;
+        double measurementNoise = 30;
+
+        double v_abs = 100;
+        double angle = Math.toRadians(45);
+
+        double v_x = v_abs * Math.cos(angle);
+        double v_y = v_abs * Math.sin(angle);
+
+        double g = 9.81;
 
         // state transition matrix
         //     [ 1  dt 0 0  ]
         // A = [ 0  1  0 0  ]
         //     [ 0  0  1 dt ]
         //     [ 0  0  0 1  ]
-        RealMatrix A = new Array2DRowRealMatrix(new double[][]{
-            {1, dt, 0, 0},
-            {0, 1, 0, 0},
-            {0, 0, 1, dt},
-            {0, 0, 0, 1}
-        });
+        RealMatrix A = matrix(
+                $(1, dt, 0, 0),
+                $(0, 1, 0, 0),
+                $(0, 0, 1, dt),
+                $(0, 0, 0, 1)
+        );
 
-        // control input matrix; adds acceleration via u
-        //     [ 0  0  0  0 ]
-        // B = [ 0  0  0  0 ]
-        //     [ 0  0  1  0 ]
-        //     [ 0  0  0  1 ]
-        RealMatrix B = new Array2DRowRealMatrix(new double[][]{
-            {0, 0, 0, 0},
-            {0, 0, 0, 0},
-            {0, 0, 1, 0},
-            {0, 0, 0, 1}
-        });
+        // control input matrix
+        RealMatrix B = diag(0, 0, 1, 1);
 
-        // measurement matrix
-        //     [ 1 0 0 0 ]
-        // H = [ 0 1 0 0 ]
-        //     [ 0 0 1 0 ]
-        //     [ 0 0 0 1 ]
-        RealMatrix H = new Array2DRowRealMatrix(new double[][]{
-            {1, 0, 0, 0},
-            {0, 1, 0, 0},
-            {0, 0, 1, 0},
-            {0, 0, 0, 1}
-        });
+        // control input vector
+        RealVector u = vector(0, 0, 0.5 * -g * dt * dt, -g * dt);
 
-        final double angle = Math.toRadians(45);
+        // measurement matrix; only x and y
+        RealMatrix H = diag(1, 0, 1, 0);
 
+        // initial state
         // x = [ 0  vx  500  vy  ]
-        RealVector x = new ArrayRealVector(new double[]{
-            0, 100 * Math.cos(angle), 500, 100 * Math.sin(angle)
-        });
-
-        // process noise covariance matrix
-        // Q = [ 0 0 0 0 ]
-        //     [ 0 0 0 0 ]
-        //     [ 0 0 0 0 ]
-        //     [ 0 0 0 0 ]
-        RealMatrix tmp = new Array2DRowRealMatrix(new double[][]{
-            {0, 0, 0, 0},
-            {0, 0, 0, 0},
-            {0, 0, 0, 0},
-            {0, 0, 0, 0}
-        });
-        RealMatrix Q = tmp.scalarMultiply(Math.pow(accelNoise, 2));
+        RealVector x = vector(0, v_x, 500, v_y);
 
         // error covariance matrix
-        // P0 = [ 1 1 ]
-        //      [ 1 1 ]
-        RealMatrix P0 = new Array2DRowRealMatrix(new double[][]{
-            {1, 1},
-            {1, 1}
-        });
+        // P0 = I
+        RealMatrix P0 = id(4);
+
+        // process noise covariance matrix
+        // Q = 0
+        RealMatrix Q = zero(4, 4);
 
         // measurement noise covariance matrix
-        //     [ 1  0  0  0 ]
-        // R = [ 0  1  0  0 ] * measurementNoise^2
-        //     [ 0  0  1  0 ]
-        //     [ 0  0  0  1 ]
-        RealMatrix R = new Array2DRowRealMatrix(new double[][]{
-            {1, 0, 0, 0},
-            {0, 1, 0, 0},
-            {0, 0, 1, 0},
-            {0, 0, 0, 1}
-        }).scalarMultiply(Math.pow(measurementNoise, 2));
-
-        // constant control input, adds gravity
-        // [ 0  0  1/2*-g*dt*dt  -g*dt ]
-        RealVector u = new ArrayRealVector(new double[]{
-            0, 0, -.5 * 9.81 * dt * dt, -9.81 * dt
-        });
+        // R = I * 0.2
+        RealMatrix R = id(4).scalarMultiply(0.2);
 
         ProcessModel pm = new DefaultProcessModel(A, B, Q, x, P0);
         MeasurementModel mm = new DefaultMeasurementModel(H, R);
         KalmanFilter filter = new KalmanFilter(pm, mm);
 
-        RandomGenerator rand = new JDKRandomGenerator();
+        RealVector x2 = vector(0, v_x, 0, v_y);
 
-        RealVector tmpPNoise = new ArrayRealVector(new double[]{
-            Math.pow(dt, 2d) / 2d,
-            dt
-        });
-        RealVector mNoise = new ArrayRealVector(1);
+        RandomGenerator rnd = new JDKRandomGenerator();
 
-        double[] stateEstimation = filter.getStateEstimation();
-        l0.add(new XYChart.Data<>(stateEstimation[0], stateEstimation[2]));
-        double a = 0.1;
-        double v = 0;
-        double s = 0;
-        l1.add(new XYChart.Data<>(s, v));
+        // iterate 144 steps
+        for (int i = 0; i < 144; i++) {
+            System.out.println(i);
 
-        // iterate 60 steps
-        for (int i = 0; i < 600; i++) {
+            l2.add(data(x2.getEntry(0), x2.getEntry(2)));
+
+            RealVector x1 = x2.mapAdd(measurementNoise * rnd.nextGaussian());
+            l1.add(data(x1.getEntry(0), x1.getEntry(2)));
+
+            // iterate cannon
+            x2 = A.operate(x2).add(B.operate(u));
+
+            double[] x0 = filter.getStateEstimation();
+            l0.add(data(x0[0], x0[2]));
+
             filter.predict(u);
-
-            // simulate the process
-            RealVector pNoise = tmpPNoise.mapMultiply(accelNoise * rand.nextGaussian());
-
-            // x = A * x + B * u + pNoise
-            x = A.operate(x).add(B.operate(u)).add(pNoise);
-
-            // simulate the measurement
-            mNoise.setEntry(0, measurementNoise * rand.nextGaussian());
-
-            // z = H * x + m_noise
-            RealVector z = H.operate(x).add(mNoise);
-
-            filter.correct(z);
-
-            stateEstimation = filter.getStateEstimation();
-            l0.add(new XYChart.Data<>(stateEstimation[0], stateEstimation[2]));
-
-            v = a * i * dt;
-            s = .5 * a * i * i * dt * dt;
-            l1.add(new XYChart.Data<>(s, v));
+            filter.correct(x1);
         }
     }
 
@@ -345,4 +290,41 @@ public class MainApp extends Application {
         launch(args);
     }
 
+    private static RealVector vector(double... ds) {
+        return MatrixUtils.createRealVector(ds);
+    }
+
+    private static double[] $(double... ds) {
+        return ds;
+    }
+
+    private static RealMatrix matrix(double[]... rows) {
+        return MatrixUtils.createRealMatrix(rows);
+    }
+
+    private static RealMatrix matrix(RealVector... cols) {
+        int numCols = cols.length;
+        int numRows = cols[0].getDimension();
+        RealMatrix mat = MatrixUtils.createRealMatrix(numRows, numCols);
+        for (int numCol = 0; numCol < numCols; numCol++) {
+            mat.setColumnVector(numCol, cols[numCol]);
+        }
+        return mat;
+    }
+
+    private static RealMatrix diag(double... ds) {
+        return MatrixUtils.createRealDiagonalMatrix(ds);
+    }
+
+    private static RealMatrix id(int d) {
+        return MatrixUtils.createRealIdentityMatrix(d);
+    }
+
+    private static RealMatrix zero(int m, int n) {
+        return MatrixUtils.createRealMatrix(m, n);
+    }
+
+    private static <T> XYChart.Data<T, T> data(T x, T y) {
+        return new XYChart.Data<>(x, y);
+    }
 }
